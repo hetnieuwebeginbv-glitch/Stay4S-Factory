@@ -1,0 +1,1 @@
+{"mcpServers":{"github":{"command":"npx","args":["-y","@modelcontextprotocol/server-github@2025.4.8"],"toolAllowlist":["list_repos","list_pull_requests","get_pull_request","get_pull_request_files"],"toolDenylist":["create_or_update_file","push_files","merge_pull_request"]}}}
