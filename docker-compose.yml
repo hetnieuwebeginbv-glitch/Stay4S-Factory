@@ -1,0 +1,97 @@
+services:
+  postgres:
+    image: postgres:16.9
+    environment:
+      POSTGRES_USER: stay4s
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: stay4s
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/001_schema.sql:ro
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stay4s -d stay4s"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  redis:
+    image: redis:7.4.2-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redisdata:/data]
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  qdrant:
+    image: qdrant/qdrant:v1.19.1
+    volumes: [qdrantdata:/qdrant/storage]
+    ports: ["6333:6333", "6334:6334"]
+  gateway:
+    build: {context: ., dockerfile: gateway/Dockerfile}
+    environment:
+      DATABASE_URL: postgresql://stay4s:${POSTGRES_PASSWORD}@postgres:5432/stay4s
+      REDIS_URL: redis://redis:6379/0
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+      WHATSAPP_GRAPH_VERSION: v23.0
+      ALLOWED_WA_IDS: ${ALLOWED_WA_IDS}
+      FACTORY_TOKEN: ${FACTORY_TOKEN}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+    ports: ["8080:8080"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+  hoofdagent:
+    build: {context: ., dockerfile: hoofdagent/Dockerfile}
+    environment:
+      DATABASE_URL: postgresql://stay4s:${POSTGRES_PASSWORD}@postgres:5432/stay4s
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://vllm:8000/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-not-needed-local}
+      VLLM_MODEL: ${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+      WHATSAPP_GRAPH_VERSION: v23.0
+      GATEWAY_URL: http://gateway:8080
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      FACTORY_TOKEN: ${FACTORY_TOKEN}
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+    depends_on: [gateway, qdrant, redis, postgres]
+  agent-runtime:
+    build: {context: ., dockerfile: hoofdagent/Dockerfile}
+    command: ["python", "-m", "hoofdagent.runtime_worker"]
+    environment:
+      DATABASE_URL: postgresql://stay4s:${POSTGRES_PASSWORD}@postgres:5432/stay4s
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://vllm:8000/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-not-needed-local}
+      VLLM_MODEL: ${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN}
+      GATEWAY_URL: http://gateway:8080
+    depends_on: [redis, postgres]
+  whisper:
+    image: onerahmet/openai-whisper-asr-webservice:latest
+    environment: {ASR_MODEL: small, ASR_ENGINE: faster_whisper}
+    ports: ["9000:9000"]
+  vllm:
+    image: vllm/vllm-openai:latest
+    profiles: ["gpu"]
+    runtime: nvidia
+    ipc: host
+    environment:
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+    volumes: [hfcache:/root/.cache/huggingface]
+    ports: ["8000:8000"]
+    command: ["--model", "${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}", "--max-model-len", "8192"]
+volumes:
+  pgdata:
+  redisdata:
+  qdrantdata:
+  hfcache:
