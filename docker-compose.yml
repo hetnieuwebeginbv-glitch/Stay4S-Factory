@@ -95,3 +95,25 @@ volumes:
   redisdata:
   qdrantdata:
   hfcache:
+
+  skills-runner:
+    build: .
+    command: ["python3", "hoofdagent/skills_runner.py"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://stay4s:${POSTGRES_PASSWORD}@postgres:5432/stay4s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  scheduler:
+    build: .
+    command: ["python3", "scheduler.py"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://stay4s:${POSTGRES_PASSWORD}@postgres:5432/stay4s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
